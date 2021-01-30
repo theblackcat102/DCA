@@ -164,8 +164,6 @@ class MulRelRanker(LocalCtxAttRanker):
         scores = None
         ment_sort_scores = None
 
-        cumulative_entity_ids = Variable(torch.LongTensor([self.ent_unk_id]).cuda())
-        cumulative_knowledge_ids = Variable(torch.LongTensor([self.word_unk_id]).cuda())
 
         cumulative_mention_idxes = None
         cumulative_mention_mask = None
@@ -209,6 +207,11 @@ class MulRelRanker(LocalCtxAttRanker):
                 # input()
         self.added_words = []
         self.added_ents = []
+
+        cumulative_entity_ids = Variable(torch.LongTensor([self.ent_unk_id]).cuda())
+        # print(cumulative_entity_ids)
+        cumulative_knowledge_ids = Variable(torch.LongTensor([self.word_unk_id]).cuda())
+
         for i in range(n_ments):
 
             if isOrderLearning:
@@ -309,13 +312,16 @@ class MulRelRanker(LocalCtxAttRanker):
                 if method == "SL":
                     # print("gold[indx]: ", gold[indx])
                     # print("gold.data[indx][0]: ", gold.data[indx][0])
+                    # print("new               : ", entity_ids[indx][ [ gold.data[indx][0] ]])
 
-                    cumulative_entity_ids = torch.cat([cumulative_entity_ids, entity_ids[indx][gold.data[indx][0]]], dim=0)
+                    new_entities = entity_ids[indx][ [ gold.data[indx][0]] ].unsqueeze(0)
+                    cumulative_entity_ids = torch.cat([ cumulative_entity_ids, new_entities], dim=0)
                     cumulative_entity_ids = Variable(self.unique(cumulative_entity_ids.cpu().data.numpy()).cuda())
 
-                    if (entity_ids[indx][gold.data[indx][0]]).data[0] in self.ent_inlinks:
+                    entity_idx = (entity_ids[indx][gold.data[0]]).item()
+                    if entity_idx  in self.ent_inlinks:
 
-                        external_inlinks = np.asarray(self.ent_inlinks[(entity_ids[indx][gold.data[indx][0]]).data[0]][:self.tok_top_n4inlink])
+                        external_inlinks = np.asarray(self.ent_inlinks[ entity_idx ][:self.tok_top_n4inlink])
 
                         cumulative_knowledge_ids = Variable(self.unique(
                             np.concatenate((cumulative_knowledge_ids.cpu().data.numpy(), external_inlinks), axis=0)).cuda())
@@ -333,17 +339,19 @@ class MulRelRanker(LocalCtxAttRanker):
                     m = Categorical(action_prob)
                     action = m.sample()
 
-                    cumulative_entity_ids = torch.cat([cumulative_entity_ids, entity_ids[indx][action.data[0]]], dim=0)
+                    new_entities = entity_ids[indx][action.data[0]].unsqueeze(0)
+                    cumulative_entity_ids = torch.cat([cumulative_entity_ids, new_entities], dim=0)
                     cumulative_entity_ids = Variable(self.unique(cumulative_entity_ids.cpu().data.numpy()).cuda())
 
-                    if (entity_ids[indx][action.data[0]]).data[0] in self.ent_inlinks:
+                    entity_idx = (entity_ids[indx][action.data[0]]).item()
+                    if entity_idx in self.ent_inlinks:
                         # external_inlinks = Variable(torch.LongTensor(self.ent_inlinks[(entity_ids[indx][action.data[0]]).data[0]][:self.tok_top_n4inlink]).cuda())
                         #
                         # cumulative_knowledge_ids = torch.cat([cumulative_knowledge_ids, external_inlinks], dim=0)
                         #
                         # cumulative_knowledge_ids = Variable(self.unique(cumulative_knowledge_ids.data).cuda)
 
-                        external_inlinks = np.asarray(self.ent_inlinks[(entity_ids[indx][action.data[0]]).data[0]][:self.tok_top_n4inlink])
+                        external_inlinks = np.asarray(self.ent_inlinks[ entity_idx ][:self.tok_top_n4inlink])
 
                         cumulative_knowledge_ids = Variable(self.unique(
                             np.concatenate((cumulative_knowledge_ids.cpu().data.numpy(), external_inlinks), axis=0)).cuda())
@@ -374,17 +382,19 @@ class MulRelRanker(LocalCtxAttRanker):
                 # print("gold[action]: ", gold[action])
                 # print("gold.data[action][0]: ", gold.data[action][0])
                 if isDynamic == 0 or isDynamic == 1:
-                    cumulative_entity_ids = torch.cat([cumulative_entity_ids, entity_ids[indx][action.data[0]]], dim=0)
-                    cumulative_entity_ids = Variable(self.unique(cumulative_entity_ids.cpu().data.numpy()).cuda())
+                    new_entities = entity_ids[indx][action.data[0]].unsqueeze(0)
 
-                if isDynamic == 0 and (entity_ids[indx][action.data[0]]).data[0] in self.ent_inlinks:
+                    cumulative_entity_ids = torch.cat([cumulative_entity_ids, new_entities], dim=0)
+                    cumulative_entity_ids = Variable(self.unique(cumulative_entity_ids.cpu().data.numpy()).cuda())
+                entities_idx = (entity_ids[indx][action.data[0]]).item()
+                if isDynamic == 0 and entities_idx in self.ent_inlinks:
 
                     # external_inlinks = Variable(torch.LongTensor(self.ent_inlinks[(entity_ids[indx][action.data[0]]).data[0]][:self.tok_top_n4inlink]).cuda())
                     #
                     # cumulative_knowledge_ids = torch.cat([cumulative_knowledge_ids, external_inlinks], dim=0)
                     #
                     # cumulative_knowledge_ids = Variable(self.unique(cumulative_knowledge_ids.data))
-                    external_inlinks = np.asarray(self.ent_inlinks[(entity_ids[indx][action.data[0]]).data[0]][:self.tok_top_n4inlink])
+                    external_inlinks = np.asarray(self.ent_inlinks[ entities_idx ][:self.tok_top_n4inlink])
 
                     cumulative_knowledge_ids = Variable(self.unique(np.concatenate((cumulative_knowledge_ids.cpu().data.numpy(), external_inlinks), axis=0)).cuda())
 
