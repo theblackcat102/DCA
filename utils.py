@@ -1,14 +1,14 @@
 from DCA.vocabulary import Vocabulary
 import numpy as np
 
-stopword_input = "../data/stopwords-multi.txt"
+stopword_input = "./data/stopwords-multi.txt"
 
 with open(stopword_input, 'r') as f_in:
     stop_word = f_in.readlines()
 
 stop_words = [z.strip() for z in stop_word]
 
-symbol_input = "../data/symbols.txt"
+symbol_input = "./data/symbols.txt"
 
 with open(symbol_input, 'r') as f_sy:
     symbol = f_sy.readlines()

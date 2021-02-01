@@ -135,6 +135,13 @@ parser.add_argument('--one_entity_once', type=int, default=0,
 
 parser.add_argument("--use_early_stop", type=str2bool, nargs='?', default='n', const=True,
                     help="")
+parser.add_argument("--freeze_emb", type=str2bool, nargs='?', default='n', const=True,
+                    help="")
+parser.add_argument("--freeze_ent_embs", type=str2bool, nargs='?', default='n', const=True,
+                    help="")
+
+parser.add_argument("--logging_name", type=str, default='DCA-SL', 
+                    help="tensorboard logger file")
 
 args = parser.parse_args()
 
@@ -147,11 +154,11 @@ np.random.seed(args.seed)
 if use_cuda:
     torch.cuda.manual_seed(args.seed)   # set random seed for present GPU
 
-datadir = '../data/generated/test_train_data'
-conll_path = '../data/basic_data/test_datasets'
-person_path = '../data/basic_data/p_e_m_data/persons.txt'
-voca_emb_dir = "../data/generated/embeddings/word_ent_embs/"
-ent_inlinks_path = "../data/entityid_dictid_inlinks_uniq.pkl"
+datadir = './data/generated/test_train_data'
+conll_path = './data/basic_data/test_datasets'
+person_path = './data/basic_data/p_e_m_data/persons.txt'
+voca_emb_dir = "./data/generated/embeddings/word_ent_embs/"
+ent_inlinks_path = "./data/entityid_dictid_inlinks_uniq.pkl"
 
 timestr = time.strftime("%Y%m%d-%H%M%S")
 
@@ -178,13 +185,15 @@ if __name__ == "__main__":
 
     config = {'hid_dims': args.hid_dims,
               'emb_dims': entity_embeddings.shape[1],
-              'freeze_embs': True,
+              'freeze_embs': args.freeze_emb,
+              'freeze_ent_embs': args.freeze_ent_embs,
               'tok_top_n': args.tok_top_n,
               'tok_top_n4ment': args.tok_top_n4ment,
               'tok_top_n4ent': args.tok_top_n4ent,
               'tok_top_n4word': args.tok_top_n4word,
               'tok_top_n4inlink': args.tok_top_n4inlink,
               'margin': args.margin,
+              'log_name': args.logging_name,
               'word_voca': word_voca,
               'entity_voca': entity_voca,
               'word_embeddings': word_embeddings,

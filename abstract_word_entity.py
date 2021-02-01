@@ -12,6 +12,13 @@ from DCA.vocabulary import Vocabulary
 # ByteTensor = torch.cuda.ByteTensor if use_cuda else torch.ByteTensor
 # Tensor = FloatTensor
 
+import json
+def is_jsonable(x):
+    try:
+        json.dumps(x)
+        return True
+    except:
+        return False
 
 def load(path, model_class, suffix=''):
     with io.open(path + '.config', 'r', encoding='utf8') as f:
@@ -37,9 +44,9 @@ class AbstractWordEntity(nn.Module):
     """
 
     def __init__(self, config=None):
+        super(AbstractWordEntity, self).__init__()
         print('--- create AbstractWordEntity model ---')
 
-        super(AbstractWordEntity, self).__init__()
         if config is None:
             return
 
@@ -47,6 +54,7 @@ class AbstractWordEntity(nn.Module):
         self.word_voca = config['word_voca']
         self.entity_voca = config['entity_voca']
         self.freeze_embs = config['freeze_embs']
+        self.freeze_ent_embs = config['freeze_ent_embs']
 
         self.word_embeddings = config['word_embeddings_class'](self.word_voca.size(), self.emb_dims)
         self.entity_embeddings = config['entity_embeddings_class'](self.entity_voca.size(), self.emb_dims)
@@ -58,7 +66,8 @@ class AbstractWordEntity(nn.Module):
 
         if self.freeze_embs:
             self.word_embeddings.weight.requires_grad = False
-            self.entity_embeddings.weight.requires_grad = False
+            if self.freeze_ent_embs:
+                self.entity_embeddings.weight.requires_grad = False
 
     def print_weight_norm(self):
         pass
@@ -71,7 +80,7 @@ class AbstractWordEntity(nn.Module):
                       'entity_voca': self.entity_voca.__dict__}
 
             for k, v in self.__dict__.items():
-                if not hasattr(v, '__dict__'):
+                if not hasattr(v, '__dict__') and is_jsonable(v) :
                     config[k] = v
 
             with io.open(path + '.config', 'w', encoding='utf8') as f:
