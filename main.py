@@ -143,6 +143,18 @@ parser.add_argument("--freeze_ent_embs", type=str2bool, nargs='?', default='n', 
 parser.add_argument("--logging_name", type=str, default='DCA-SL', 
                     help="tensorboard logger file")
 
+# kg training
+parser.add_argument("--kg_batch_size", type=int,
+                    help="number of batch size",
+                    default=512)
+parser.add_argument("--kg_weight", type=float,
+                    help="number of top inlinked entities for the whole model",
+                    default=0.8)
+parser.add_argument("--kg_regularization", type=float,
+                    help="number of top inlinked entities for the whole model",
+                    default=0.001)
+
+
 args = parser.parse_args()
 
 # if gpu is to be used
@@ -179,6 +191,7 @@ if __name__ == "__main__":
 
     entity_voca, entity_embeddings = utils.load_voca_embs(voca_emb_dir + 'dict.entity',
                                                           voca_emb_dir + 'entity_embeddings.npy')
+    kg_dataset = D.KGDataset()
 
     with open(ent_inlinks_path, 'rb') as f_pkl:
         ent_inlinks_dict = pickle.load(f_pkl)
@@ -205,10 +218,11 @@ if __name__ == "__main__":
               'dca_method' : args.dca_method,
               'f1_csv_path': F1_CSV_Path,
               'seq_len': args.seq_len,
+              'type_vocab_size': kg_dataset.type_size,
+              'rel_vocab_size': kg_dataset.rel_size,
               'isDynamic' : args.isDynamic,
               'one_entity_once': args.one_entity_once,
               'args': args}
-
     # pprint(config)
     ranker = EDRanker(config=config)
 
@@ -226,12 +240,19 @@ if __name__ == "__main__":
     with open(F1_CSV_Path, 'w') as f_csv_f1:
         f1_csv_writer = csv.writer(f_csv_f1)
         f1_csv_writer.writerow(['dataset', 'epoch', 'dynamic', 'F1 Score'])
-
     if args.mode == 'train':
         print('training...')
-        config = {'lr': args.learning_rate, 'n_epochs': args.n_epochs, 'isDynamic':args.isDynamic, 'use_early_stop' : args.use_early_stop,}
+        config = {
+                'lr': args.learning_rate,
+                'n_epochs': args.n_epochs, 
+                'kg_weight': args.kg_weight,
+                'kg_regularization': args.kg_regularization,
+                'kg_batch_size': args.kg_batch_size,
+                'isDynamic': args.isDynamic, 
+                'use_early_stop' : args.use_early_stop,
+            }
         # pprint(config)
-        ranker.train(conll.train, dev_datasets, config)
+        ranker.train(kg_dataset, conll.train, dev_datasets, config)
 
     elif args.mode == 'eval':
         org_dev_datasets = dev_datasets  # + [('aida-train', conll.train)]

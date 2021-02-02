@@ -2,11 +2,56 @@ import torch
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
+import torch.nn as nn
+
 from DCA.local_ctx_att_ranker import LocalCtxAttRanker
 from torch.distributions import Categorical
 import copy
 
 np.set_printoptions(threshold=20)
+
+def diversity_regularization(x):
+    x = x / F.normalize(x, dim=-1, p=2)
+    y = torch.flip(x, [0, 1])
+
+    return torch.cdist(x, y, p=2).mean()
+
+
+def pairwise_diversity_regularization(x, y):
+    x = x / F.normalize(x, dim=-1, p=2)
+    y = y / F.normalize(y, dim=-1, p=2)
+
+    return torch.cdist(x, y, p=2).mean()
+
+class SoftplusLoss(nn.Module):
+
+    def __init__(self, adv_temperature = None):
+        super(SoftplusLoss, self).__init__()
+        self.criterion = nn.Softplus()
+        if adv_temperature != None:
+            self.adv_temperature = nn.Parameter(torch.Tensor([adv_temperature]))
+            self.adv_temperature.requires_grad = False
+            self.adv_flag = True
+        else:
+            self.adv_flag = False
+    
+    def get_weights(self, n_score):
+        return F.softmax(n_score * self.adv_temperature, dim = -1).detach()
+
+    def forward(self, p_score, n_score):
+        p_score = p_score.flatten()
+        n_score = n_score.flatten()
+        if self.adv_flag:
+            return (self.criterion(-p_score).mean() + (self.get_weights(n_score) * self.criterion(n_score)).sum(dim = -1).mean()) / 2
+        else:
+            return (self.criterion(-p_score).mean() + self.criterion(n_score).mean()) / 2
+            
+
+    def predict(self, p_score, n_score):
+        score = self.forward(p_score, n_score)
+        return score.cpu().data.numpy()
+
+
 
 
 class MulRelRanker(LocalCtxAttRanker):
@@ -65,6 +110,13 @@ class MulRelRanker(LocalCtxAttRanker):
 
         # Typing feature
         self.type_emb = torch.nn.Parameter(torch.randn([4, 5]))
+
+        # type of embedding
+        self.type_embeddings = nn.Embedding( config['type_vocab_size'], self.emb_dims)
+        self.rel_embeddings = nn.Embedding( config['rel_vocab_size'], self.emb_dims)
+        self.criterion = SoftplusLoss()
+
+
         self.score_combine = torch.nn.Sequential(
                 torch.nn.Linear(5, self.hid_dims),
                 torch.nn.ReLU(),
@@ -632,34 +684,6 @@ class MulRelRanker(LocalCtxAttRanker):
         if (l2_b_norm > max_norm).data.all():
             self.score_combine[3].bias.data = self.score_combine[3].bias.data * max_norm / l2_b_norm.data
 
-    # def finish_episode(self):
-    #     policy_loss = []
-    #     rewards = []
-    #
-    #     # we only give a non-zero reward when done
-    #     g_return = sum(self.rewards) / len(self.rewards)
-    #
-    #     # add the final return in the last step
-    #     rewards.insert(0, g_return)
-    #
-    #     R = g_return
-    #     for idx in range(len(self.rewards) - 1):
-    #         R = R * self.gamma
-    #         rewards.insert(0, R)
-    #
-    #     rewards = torch.from_numpy(np.array(rewards)).type(torch.cuda.FloatTensor)
-    #
-    #     for log_prob, reward in zip(self.saved_log_probs, rewards):
-    #         policy_loss.append(-log_prob * reward)
-    #
-    #     policy_loss = torch.cat(policy_loss).sum()
-    #
-    #     del self.rewards[:]
-    #     del self.saved_log_probs[:]
-    #     del self.actions[:]
-    #
-    #     return policy_loss
-
     def finish_episode(self, rewards_arr, log_prob_arr):
         if len(rewards_arr) != len(log_prob_arr):
             print("Size mismatch between Rwards and Log_probs!")
@@ -717,3 +741,71 @@ class MulRelRanker(LocalCtxAttRanker):
 
     def get_order_truth(self):
         return self.decision_order, self.targets
+
+    def _calc(self, h, t, r):
+        score = (h * r) * t
+        return torch.sum(score, -1)
+
+    def score(self, h, t, r):
+        score = (h * r) * t
+
+        return -torch.sum(score, -1)
+
+    def encode(self, indicies):
+        return self.entity_embeddings(indicies)        
+
+    def extract_rel(self, r):
+        return self.rel_embeddings(r)
+
+    def calculate_loss(self, pos_pair, neg_pair):
+        h, r, t = pos_pair
+
+        neg_h, neg_r, neg_t = neg_pair
+
+        p_score = self._calc(*self.kg_forward(h, r, t))
+        n_score = self._calc(*self.kg_forward(neg_h, neg_r, neg_t))
+
+        return self.criterion(p_score, n_score).mean()
+
+    def self_regularization(self):
+        return (self.entity_embeddings.weight.norm(p = 3)**3 + \
+            self.rel_embeddings.weight.norm(p = 3)**3 + \
+            self.type_embeddings.weight.norm(p = 3)**3 )
+
+    def calculate_loss_avg(self, type_triples):
+        h, r, t_types, neg_t_types = type_triples
+
+        t_types_emb = self.type_embeddings(t_types)
+
+        neg_t_types_emb = self.type_embeddings(neg_t_types)
+
+
+        p_score = self._calc(self.entity_embeddings(h), t_types_emb.mean(1), self.rel_embeddings(r))
+        n_score = self._calc(self.entity_embeddings(h), neg_t_types_emb.mean(1), self.rel_embeddings(r))
+
+        return self.criterion(p_score, n_score),  (
+            diversity_regularization( neg_t_types_emb.view(-1, self.hidden_size)) + \
+            diversity_regularization( t_types_emb.view(-1, self.hidden_size) )
+            ) / 2, self.type_regularization( (h, r, t_types) )
+
+    def kg_regularization(self, data):
+        batch_h, batch_r, batch_t  = data
+        h = self.entity_embeddings(batch_h)
+        t = self.entity_embeddings(batch_t)
+        r = self.rel_embeddings(batch_r)
+        regul = (torch.mean(h ** 2) + torch.mean(t ** 2) + torch.mean(r ** 2)) / 3
+        return regul
+
+    def type_regularization(self, data):
+        batch_h, batch_r, batch_t  = data
+        h = self.entity_embeddings(batch_h)
+        t = self.type_embeddings(batch_t)
+        r = self.rel_embeddings(batch_r)
+        regul = (torch.mean(h ** 2) + torch.mean(t ** 2) + torch.mean(r ** 2)) / 3
+        return regul
+
+    def kg_forward(self, h, r, t):
+        h = self.entity_embeddings(h)
+        t = self.entity_embeddings(t)
+        r = self.rel_embeddings(r)
+        return h, t, r

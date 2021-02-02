@@ -10,7 +10,9 @@ from random import shuffle
 import torch.optim as optim
 from DCA.abstract_word_entity import load as load_model
 from DCA.mulrel_ranker import MulRelRanker
+
 from pprint import pprint
+from torch.utils.data import DataLoader
 from itertools import count
 import copy
 import csv
@@ -285,11 +287,14 @@ class EDRanker:
 
 
     # Heuristic Order Learning Method - Based on Mention-Local Similarity or Mention-Topical Similarity
-    def train(self, org_train_dataset, org_dev_datasets, config):
+    def train(self, kg_dataset, org_train_dataset, org_dev_datasets, config):
         print('extracting training data')
         train_dataset = self.get_data_items(org_train_dataset, predict=False, isTrain=True)
         print('#train docs', len(train_dataset))
-
+        kg_dataloader = DataLoader(kg_dataset, 
+            batch_size=config['kg_batch_size'], 
+            num_workers=5, shuffle=True)
+        looper = utils.infiniteloop(kg_dataloader)
 
         self.init_lr = config['lr']
         dev_datasets = []
@@ -380,9 +385,10 @@ class EDRanker:
                 ment_ids = Variable(torch.LongTensor(ment_ids).cuda())
                 ment_mask = Variable(torch.FloatTensor(ment_mask).cuda())
 
+                kg_batch = next(looper)
                 if self.args.method == "SL":
                     optimizer.zero_grad()
-
+                    margin_loss = self.model.calculate_loss(kg_batch['kg_pos_triplets'], kg_batch['kg_neg_triplets'])
                     scores, _ = self.model.forward(token_ids, token_mask, entity_ids, entity_mask, p_e_m, mtype, etype,
                                                    ment_ids, ment_mask, desc_ids, desc_mask, gold=true_pos.view(-1, 1),
                                                    method=self.args.method,
@@ -400,6 +406,12 @@ class EDRanker:
                     else:
                         loss = self.model.loss(scores, true_pos, method=self.args.method)
 
+                    loss += margin_loss * config['kg_weight'] + \
+                        self.model.kg_regularization(kg_batch['kg_pos_triplets']) * config['kg_regularization']
+                    
+                    # consistency_loss, diversity_loss, type_regularization = self.knowledge_model.calculate_loss_avg(
+                    #     kg_batch['type_triplets'])
+
                     loss.backward()
                     optimizer.step()
                     self.model.regularize(max_norm=4)
@@ -414,6 +426,7 @@ class EDRanker:
                     # the actual episode number for one doc is determined by decision accuracy
                     for i_episode in count(1):
                         optimizer.zero_grad()
+                        margin_loss = self.model.calculate_loss(kg_batch['kg_pos_triplets'], kg_batch['kg_neg_triplets'])
 
                         # get the model output
                         scores, actions = self.model.forward(token_ids, token_mask, entity_ids, entity_mask, p_e_m,
@@ -434,6 +447,8 @@ class EDRanker:
                             loss = self.model.loss(scores, targets, method=self.args.method)
                         else:
                             loss = self.model.loss(scores, true_pos, method=self.args.method)
+                        loss += margin_loss * config['kg_weight'] + \
+                            self.model.kg_regularization(kg_pos_triplets) * config['kg_regularization']
 
                         loss.backward()
                         optimizer.step()
@@ -472,6 +487,7 @@ class EDRanker:
 
                         if correct/total >= rl_acc_threshold or early_stop_count >= 3:
                             break
+                writer.add_scalar('margin', margin_loss, steps)
 
                 writer.add_scalar('loss', loss, steps)
                 steps += 1

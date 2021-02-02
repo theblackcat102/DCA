@@ -16,6 +16,22 @@ with open(symbol_input, 'r') as f_sy:
 symbols = [s.strip() for s in symbol]
 
 
+def infiniteloop(dataloader, to_cuda=True):
+    while True:
+        for batch in iter(dataloader):
+            pos_triplets, neg_triplets, type_triplets = batch
+            if to_cuda:
+                pos_triplets = [t.cuda() for t in pos_triplets] 
+                neg_triplets = [t.cuda() for t in neg_triplets] 
+                type_triplets = [t.cuda() for t in type_triplets] 
+
+            yield {
+                'kg_pos_triplets': pos_triplets,
+                'kg_neg_triplets': neg_triplets,
+                'type_triplets': type_triplets,
+            }
+
+
 def is_important_word(s):
     """
     an important word is not a stopword, a number, or len == 1
