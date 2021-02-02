@@ -1,12 +1,19 @@
 import re
 import random
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from pprint import pprint
 import pickle as pkl
 import json
+from torch.utils.data import Dataset
+import os
+import torch
+from vocabulary import Vocabulary
+import numpy as np
+
 doc2type = pkl.load(open('./data/doc2type.pkl', 'rb'))
 entity2type = pkl.load(open('./data/entity2type.pkl', 'rb'))
 mtype2id = {'PER':0, 'ORG':1, 'GPE':2, 'UNK':3}
+
 def judge(s1, s2):
     if s1==s2:
         return True
@@ -300,3 +307,115 @@ class CoNLLDataset:
         reorder_dataset(self.clueweb, order)
         reorder_dataset(self.wikipedia, order)
 
+
+def negsamp_vectorized_bsearch(pos_inds, n_items, n_samp=32, items=None):
+    """ Guess and check vectorized
+    Assumes that we are allowed to potentially 
+    return less than n_samp samples
+    """
+    if items is not None:
+        raw_samps_idx = np.random.randint(0, len(items)-1, size=n_samp)
+        raw_samps = items[raw_samps_idx]
+    else:
+        raw_samps = np.random.randint(0, n_items, size=n_samp)
+
+
+    if len(pos_inds) > 0:
+        ss = np.searchsorted(pos_inds, raw_samps)
+        pos_mask = raw_samps == np.take(pos_inds, ss, mode='clip')
+        neg_inds = raw_samps[~pos_mask]
+        return neg_inds
+    return raw_samps
+
+
+class KGDataset(Dataset):
+    type_names = [
+            'http://purl.org/dc/terms/subject',
+            'http://www.w3.org/1999/02/22-rdf-syntax-ns#type',
+    ]
+
+    def __init__(self, data_path='data', max_type_size=5):
+        self.max_type_size = max_type_size
+        entity2id_path = os.path.join(data_path,'generated/embeddings/word_ent_embs/dict.entity')
+        self.entity_dict = Vocabulary.load(entity2id_path).word2id
+        triplets = pkl.load(open(os.path.join(data_path, 'triplets.pkl'), 'rb'))
+        type_triplets = pkl.load(open(os.path.join(data_path, 'type_triplets.pkl'), 'rb'))
+        self.type_dict = pkl.load(open(os.path.join(data_path, 'type2id.pkl'), 'rb'))
+        self.rel_dict = pkl.load(open(os.path.join(data_path, 'rel2id.pkl'), 'rb'))
+        rel2id = {}
+        # if os.path.join(data_path, 'clean_triplets.pkl'):
+        self.triplets = []
+
+        for (h, r, t) in triplets:
+            if h in self.entity_dict and t in self.entity_dict:
+                self.triplets.append((h, r, t))
+        # else:
+        #     pkl.load(os.path.join(data_path, 'clean_triplets.pkl'))
+        type_triplets_map = defaultdict(list)
+        for (h, r, type_) in type_triplets:
+            type_triplets_map[h+'\t'+r].append(type_)
+        
+        self.type_triplets = []
+        for key, types in type_triplets_map.items():
+            if len(types) >= max_type_size:
+                h, r = key.split('\t')
+                if h in self.entity_dict:
+                    self.type_triplets.append((self.entity_dict[h], self.rel_dict[r], np.array([ self.type_dict[t] for t in types ]) ))
+
+        self.ent_size = len(self.entity_dict)
+        self.rel_size = len(self.rel_dict)
+        self.type_size = len(self.type_dict)
+
+        self.num_entries = len(self.triplets)
+ 
+    def __len__(self):
+        return self.num_entries
+
+
+    def __getitem__(self, index):
+        (h, r, t) = self.triplets[index]
+        h_idx = self.entity_dict[h]
+        r_idx = self.rel_dict[r]
+        t_idx = self.entity_dict[t]
+        pos_triplet = (h_idx, r_idx, t_idx)
+        neg_triplet = self.sample_negative(*pos_triplet)
+
+        type_idx = random.randint(0, len(self.type_triplets)-1)
+        type_triplets = self.type_triplets[type_idx]
+        valid_types = type_triplets[2]
+
+        negative_type_triplets = self.sample_negative_types(valid_types)[:self.max_type_size ]
+        random_idx = torch.randint(len(valid_types), (self.max_type_size, )).flatten()
+        # print(random_idx, valid_types)
+        output_types = ( type_triplets[0], type_triplets[1], 
+            torch.from_numpy(valid_types[random_idx]).long(), negative_type_triplets.long() )
+
+
+        return pos_triplet, neg_triplet, output_types
+
+    def sample_negative_types(self, t):
+        pos_ids = t
+
+        negative_samples = torch.from_numpy(negsamp_vectorized_bsearch(pos_ids, 
+            self.type_size, n_samp=len(pos_ids)*5).flatten())
+
+        return negative_samples
+
+
+    def sample_negative(self, h, r, t):
+        replace_head = random.random() > 0.5
+        tmp = random.randint(0, self.ent_size-1)
+        while tmp == h or tmp == r:
+            tmp = random.randint(0, self.ent_size-1)
+        if replace_head:
+            return tmp, r, t
+        return h, r, tmp
+
+if __name__ == '__main__':
+    from torch.utils.data import DataLoader
+
+    dataset = KGDataset()
+    dataloader = DataLoader(dataset, batch_size=1024, num_workers=5)
+    # dataset[0]
+    for batch in dataloader:
+        print(batch[0][0].shape)
