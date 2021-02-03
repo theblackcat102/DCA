@@ -23,33 +23,27 @@ def pairwise_diversity_regularization(x, y):
 
     return torch.cdist(x, y, p=2).mean()
 
-class SoftplusLoss(nn.Module):
+class MarginLoss(nn.Module):
 
-    def __init__(self, adv_temperature = None):
-        super(SoftplusLoss, self).__init__()
-        self.criterion = nn.Softplus()
-        if adv_temperature != None:
-            self.adv_temperature = nn.Parameter(torch.Tensor([adv_temperature]))
-            self.adv_temperature.requires_grad = False
-            self.adv_flag = True
-        else:
-            self.adv_flag = False
-    
-    def get_weights(self, n_score):
-        return F.softmax(n_score * self.adv_temperature, dim = -1).detach()
+	def __init__(self, adv_temperature = None, margin = 6.0):
+		super(MarginLoss, self).__init__()
+		self.margin = nn.Parameter(torch.Tensor([margin]))
+		self.margin.requires_grad = False
+		if adv_temperature != None:
+			self.adv_temperature = nn.Parameter(torch.Tensor([adv_temperature]))
+			self.adv_temperature.requires_grad = False
+			self.adv_flag = True
+		else:
+			self.adv_flag = False
+	
+	def get_weights(self, n_score):
+		return torch.softmax(-n_score * self.adv_temperature, dim = -1).detach()
 
-    def forward(self, p_score, n_score):
-        p_score = p_score.flatten()
-        n_score = n_score.flatten()
-        if self.adv_flag:
-            return (self.criterion(-p_score).mean() + (self.get_weights(n_score) * self.criterion(n_score)).sum(dim = -1).mean()) / 2
-        else:
-            return (self.criterion(-p_score).mean() + self.criterion(n_score).mean()) / 2
-            
-
-    def predict(self, p_score, n_score):
-        score = self.forward(p_score, n_score)
-        return score.cpu().data.numpy()
+	def forward(self, p_score, n_score):
+		if self.adv_flag:
+			return (self.get_weights(n_score) * torch.max(p_score - n_score, -self.margin)).sum(dim = -1).mean() + self.margin
+		else:
+			return (torch.max(p_score - n_score, -self.margin)).mean() + self.margin
 
 
 
@@ -114,7 +108,8 @@ class MulRelRanker(LocalCtxAttRanker):
         # type of embedding
         self.type_embeddings = nn.Embedding( config['type_vocab_size'], self.emb_dims)
         self.rel_embeddings = nn.Embedding( config['rel_vocab_size'], self.emb_dims)
-        self.criterion = SoftplusLoss()
+        self.criterion = MarginLoss()
+        self.p_norm = 1
 
 
         self.score_combine = torch.nn.Sequential(
@@ -743,13 +738,10 @@ class MulRelRanker(LocalCtxAttRanker):
         return self.decision_order, self.targets
 
     def _calc(self, h, t, r):
-        score = (h * r) * t
-        return torch.sum(score, -1)
+        return torch.norm(h + r - t, self.p_norm, -1)
 
     def score(self, h, t, r):
-        score = (h * r) * t
-
-        return -torch.sum(score, -1)
+        return torch.norm(h + r - t, self.p_norm, -1)
 
     def encode(self, indicies):
         return self.entity_embeddings(indicies)        
