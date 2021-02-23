@@ -10,9 +10,8 @@ import pickle
 from DCA.ed_ranker import EDRanker
 import csv
 import time
-
 import numpy as np
-
+import json
 
 
 def str2bool(v):
@@ -240,6 +239,7 @@ if __name__ == "__main__":
     with open(F1_CSV_Path, 'w') as f_csv_f1:
         f1_csv_writer = csv.writer(f_csv_f1)
         f1_csv_writer.writerow(['dataset', 'epoch', 'dynamic', 'F1 Score'])
+
     if args.mode == 'train':
         print('training...')
         config = {
@@ -252,7 +252,15 @@ if __name__ == "__main__":
                 'use_early_stop' : args.use_early_stop,
             }
         # pprint(config)
-        ranker.train(kg_dataset, conll.train, dev_datasets, config)
+        benchmarks_scores = ranker.train(kg_dataset, conll.train, dev_datasets, config)
+        results = {}
+        results['branch'] = utils.get_active_branch_name()
+        results['config'] = config
+        results['args'] = vars(args)
+        results['f1'] = benchmarks_scores
+        with open('results.jsonl', 'a') as f:
+            f.write(json.dumps(results)+'\n')
+
 
     elif args.mode == 'eval':
         org_dev_datasets = dev_datasets  # + [('aida-train', conll.train)]

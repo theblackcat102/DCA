@@ -1,6 +1,21 @@
 from DCA.vocabulary import Vocabulary
 import numpy as np
 
+
+from pathlib import Path
+
+def get_active_branch_name():
+
+    head_dir = Path(".") / ".git" / "HEAD"
+    with head_dir.open("r") as f: content = f.read().splitlines()
+
+    for line in content:
+        if line[0:4] == "ref:":
+            return line.partition("refs/heads/")[2]
+    
+    return ''
+
+
 stopword_input = "./data/stopwords-multi.txt"
 
 with open(stopword_input, 'r') as f_in:
