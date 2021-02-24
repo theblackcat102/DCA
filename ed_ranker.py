@@ -336,6 +336,7 @@ class EDRanker:
             {'best_aida_A_rlts': best_aida_A_f1,
              'best_aida_B_rlts': best_aida_B_f1, 
              'best_ave_rlts': best_ave_f1})
+        benchmarks_scores = {}
 
         for e in range(config['n_epochs']):
             shuffle(train_dataset)
@@ -510,6 +511,9 @@ class EDRanker:
 
                     print(dname, utils.tokgreen('micro F1: ' + str(f1)), flush=True)
                     writer.add_scalar('micro_F1/'+dname, f1, e)
+                    if dname not in benchmarks_scores:
+                        benchmarks_scores[dname] = {}
+                    benchmarks_scores[dname][e] = f1
 
                     with open(self.output_path, 'a') as eval_csv_f1:
                         eval_f1_csv_writer = csv.writer(eval_csv_f1)
@@ -576,6 +580,7 @@ class EDRanker:
         print('best_aida_B_rlts', best_aida_B_rlts)
         print('best_ave_rlts', best_ave_rlts)
         writer.flush()
+        return benchmarks_scores
 
     def record_runtime(self, method):
         self.run_time.sort(key=lambda x:x[0])

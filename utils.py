@@ -16,6 +16,20 @@ with open(symbol_input, 'r') as f_sy:
 symbols = [s.strip() for s in symbol]
 
 
+from pathlib import Path
+
+def get_active_branch_name():
+
+    head_dir = Path(".") / ".git" / "HEAD"
+    with head_dir.open("r") as f: content = f.read().splitlines()
+
+    for line in content:
+        if line[0:4] == "ref:":
+            return line.partition("refs/heads/")[2]
+    
+    return ''
+
+
 def is_important_word(s):
     """
     an important word is not a stopword, a number, or len == 1

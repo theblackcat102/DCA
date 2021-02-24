@@ -10,7 +10,7 @@ import pickle
 from DCA.ed_ranker import EDRanker
 import csv
 import time
-
+import json
 import numpy as np
 
 
@@ -231,7 +231,15 @@ if __name__ == "__main__":
         print('training...')
         config = {'lr': args.learning_rate, 'n_epochs': args.n_epochs, 'isDynamic':args.isDynamic, 'use_early_stop' : args.use_early_stop,}
         # pprint(config)
-        ranker.train(conll.train, dev_datasets, config)
+        results = {}
+        results['branch'] = utils.get_active_branch_name()
+        results['config'] = config
+        results['args'] = vars(args)
+
+        benchmarks_scores = ranker.train(conll.train, dev_datasets, config)
+        results['f1'] = benchmarks_scores
+        with open('results.jsonl', 'a') as f:
+            f.write(json.dumps(results)+'\n')
 
     elif args.mode == 'eval':
         org_dev_datasets = dev_datasets  # + [('aida-train', conll.train)]
