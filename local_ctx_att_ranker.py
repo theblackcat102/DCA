@@ -22,12 +22,12 @@ class LocalCtxAttRanker(AbstractWordEntity):
         self.tok_top_n = config['tok_top_n']
         self.margin = config['margin']
 
-        self.att_mat_diag = nn.Parameter(torch.ones(self.emb_dims))
-        self.tok_score_mat_diag = nn.Parameter(torch.ones(self.emb_dims))
+        self.att_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims * 2)))
+        self.tok_score_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims * 2)))
         self.local_ctx_dr = nn.Dropout(p=0)
 
-        self.ment_att_mat_diag = nn.Parameter(torch.ones(self.emb_dims))
-        self.ment_score_mat_diag = nn.Parameter(torch.ones(self.emb_dims))
+        self.ment_att_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims * 2)) )
+        self.ment_score_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims * 2)) )
 
         self.ment_att_mat_diag.requires_grad = False
         self.ment_score_mat_diag.requires_grad = False
@@ -61,6 +61,8 @@ class LocalCtxAttRanker(AbstractWordEntity):
 
         tok_vecs = self.word_embeddings(token_ids)
         entity_vecs = self.entity_embeddings(entity_ids)
+        kg_entity_vecs = self.kg_ent_embeddings(entity_ids)
+        entity_vecs = torch.stack([ entity_vecs, kg_entity_vecs ], dim=-1)
 
         # att
         ent_tok_att_scores = torch.bmm(entity_vecs * self.att_mat_diag, tok_vecs.permute(0, 2, 1))

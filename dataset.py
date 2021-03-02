@@ -342,6 +342,9 @@ class KGDataset(Dataset):
         type_triplets = pkl.load(open(os.path.join(data_path, 'type_triplets.pkl'), 'rb'))
         self.type_dict = pkl.load(open(os.path.join(data_path, 'type2id.pkl'), 'rb'))
         self.rel_dict = pkl.load(open(os.path.join(data_path, 'rel2id.pkl'), 'rb'))
+        self.entity_size = len(self.entity_dict)
+        self.relation_size = len(self.rel_dict)
+        self.type_size = len(self.type_dict)
         rel2id = {}
         # if os.path.join(data_path, 'clean_triplets.pkl'):
         self.triplets = []
@@ -415,7 +418,7 @@ if __name__ == '__main__':
     from torch.utils.data import DataLoader
 
     dataset = KGDataset()
-    dataloader = DataLoader(dataset, batch_size=1024, num_workers=5)
+    dataloader = DataLoader(dataset, batch_size=32, num_workers=5)
     # dataset[0]
     for batch in dataloader:
-        print(batch[0][0].shape)
+        print(batch[0][0], batch[0])

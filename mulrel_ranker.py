@@ -106,8 +106,8 @@ class MulRelRanker(LocalCtxAttRanker):
         self.type_emb = torch.nn.Parameter(torch.randn([4, 5]))
 
         # type of embedding
-        self.type_embeddings = nn.Embedding( config['type_vocab_size'], self.emb_dims)
-        self.rel_embeddings = nn.Embedding( config['rel_vocab_size'], self.emb_dims)
+        self.kg_ent_embeddings = nn.Embedding( config['rel_vocab_size'], self.emb_dims)
+
         self.criterion = MarginLoss()
         self.p_norm = 1
 
@@ -587,6 +587,10 @@ class MulRelRanker(LocalCtxAttRanker):
                 cumulative_entity_vecs = self.word_embeddings(cumulative_ids)
             else:
                 cumulative_entity_vecs = self.entity_embeddings(cumulative_ids)
+
+            kg_entity_vecs = self.kg_ent_embeddings(cumulative_ids)
+            cumulative_entity_vecs = torch.stack([ cumulative_entity_vecs, kg_entity_vecs ], dim=-1)
+
         except:
             print(cumulative_ids)
             input()
@@ -594,6 +598,8 @@ class MulRelRanker(LocalCtxAttRanker):
         # cumulative_entity_vecs = self.entity_embeddings(cumulative_ids)
 
         entity_vecs = self.entity_embeddings(entity_ids)
+        kg_entity_vecs = self.kg_ent_embeddings(entity_ids)
+        entity_vecs = torch.stack([ entity_vecs, kg_entity_vecs ], dim=-1)
 
         # debug
         # print("Cumulative_entity_ids Size: ", cumulative_ids.size(), cumulative_ids.size(0))
@@ -737,67 +743,3 @@ class MulRelRanker(LocalCtxAttRanker):
     def get_order_truth(self):
         return self.decision_order, self.targets
 
-    def _calc(self, h, t, r):
-        return torch.norm(h + r - t, self.p_norm, -1)
-
-    def score(self, h, t, r):
-        return torch.norm(h + r - t, self.p_norm, -1)
-
-    def encode(self, indicies):
-        return self.entity_embeddings(indicies)        
-
-    def extract_rel(self, r):
-        return self.rel_embeddings(r)
-
-    def calculate_loss(self, pos_pair, neg_pair):
-        h, r, t = pos_pair
-
-        neg_h, neg_r, neg_t = neg_pair
-
-        p_score = self._calc(*self.kg_forward(h, r, t))
-        n_score = self._calc(*self.kg_forward(neg_h, neg_r, neg_t))
-
-        return self.criterion(p_score, n_score).mean()
-
-    def self_regularization(self):
-        return (self.entity_embeddings.weight.norm(p = 3)**3 + \
-            self.rel_embeddings.weight.norm(p = 3)**3 + \
-            self.type_embeddings.weight.norm(p = 3)**3 )
-
-    def calculate_loss_avg(self, type_triples):
-        h, r, t_types, neg_t_types = type_triples
-
-        t_types_emb = self.type_embeddings(t_types)
-
-        neg_t_types_emb = self.type_embeddings(neg_t_types)
-
-
-        p_score = self._calc(self.entity_embeddings(h), t_types_emb.mean(1), self.rel_embeddings(r))
-        n_score = self._calc(self.entity_embeddings(h), neg_t_types_emb.mean(1), self.rel_embeddings(r))
-
-        return self.criterion(p_score, n_score),  (
-            diversity_regularization( neg_t_types_emb.view(-1, self.hidden_size)) + \
-            diversity_regularization( t_types_emb.view(-1, self.hidden_size) )
-            ) / 2, self.type_regularization( (h, r, t_types) )
-
-    def kg_regularization(self, data):
-        batch_h, batch_r, batch_t  = data
-        h = self.entity_embeddings(batch_h)
-        t = self.entity_embeddings(batch_t)
-        r = self.rel_embeddings(batch_r)
-        regul = (torch.mean(h ** 2) + torch.mean(t ** 2) + torch.mean(r ** 2)) / 3
-        return regul
-
-    def type_regularization(self, data):
-        batch_h, batch_r, batch_t  = data
-        h = self.entity_embeddings(batch_h)
-        t = self.type_embeddings(batch_t)
-        r = self.rel_embeddings(batch_r)
-        regul = (torch.mean(h ** 2) + torch.mean(t ** 2) + torch.mean(r ** 2)) / 3
-        return regul
-
-    def kg_forward(self, h, r, t):
-        h = self.entity_embeddings(h)
-        t = self.entity_embeddings(t)
-        r = self.rel_embeddings(r)
-        return h, t, r

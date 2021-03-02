@@ -170,6 +170,8 @@ conll_path = './data/basic_data/test_datasets'
 person_path = './data/basic_data/p_e_m_data/persons.txt'
 voca_emb_dir = "./data/generated/embeddings/word_ent_embs/"
 ent_inlinks_path = "./data/entityid_dictid_inlinks_uniq.pkl"
+kg_weight_path = 'kg_weights.pt'
+
 
 timestr = time.strftime("%Y%m%d-%H%M%S")
 
@@ -190,6 +192,7 @@ if __name__ == "__main__":
 
     entity_voca, entity_embeddings = utils.load_voca_embs(voca_emb_dir + 'dict.entity',
                                                           voca_emb_dir + 'entity_embeddings.npy')
+    kg_embeddings = torch.load(kg_weight_path)
     kg_dataset = D.KGDataset()
 
     with open(ent_inlinks_path, 'rb') as f_pkl:
@@ -210,6 +213,7 @@ if __name__ == "__main__":
               'entity_voca': entity_voca,
               'word_embeddings': word_embeddings,
               'entity_embeddings': entity_embeddings,
+              'kg_entity_embeddings': kg_embeddings,
               'entity_inlinks': ent_inlinks_dict,
               'dr': args.dropout_rate,
               'gamma': args.gamma,

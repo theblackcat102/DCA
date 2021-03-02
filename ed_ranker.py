@@ -408,11 +408,6 @@ class EDRanker:
                     else:
                         loss = self.model.loss(scores, true_pos, method=self.args.method)
 
-                    loss += margin_loss * config['kg_weight'] + \
-                        self.model.kg_regularization(kg_batch['kg_pos_triplets']) * config['kg_regularization']
-                    
-                    # consistency_loss, diversity_loss, type_regularization = self.knowledge_model.calculate_loss_avg(
-                    #     kg_batch['type_triplets'])
 
                     loss.backward()
                     optimizer.step()
@@ -449,8 +444,6 @@ class EDRanker:
                             loss = self.model.loss(scores, targets, method=self.args.method)
                         else:
                             loss = self.model.loss(scores, true_pos, method=self.args.method)
-                        loss += margin_loss * config['kg_weight'] + \
-                            self.model.kg_regularization(kg_pos_triplets) * config['kg_regularization']
 
                         loss.backward()
                         optimizer.step()

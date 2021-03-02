@@ -69,6 +69,9 @@ class AbstractWordEntity(nn.Module):
             if self.freeze_ent_embs:
                 self.entity_embeddings.weight.requires_grad = False
 
+        self.kg_ent_embeddings = nn.Embedding(self.entity_voca.size(), self.emb_dims)
+        self.kg_ent_embeddings.load_state_dict({'weight':  config['kg_entity_embeddings']})
+
     def print_weight_norm(self):
         pass
 
