@@ -170,7 +170,7 @@ conll_path = './data/basic_data/test_datasets'
 person_path = './data/basic_data/p_e_m_data/persons.txt'
 voca_emb_dir = "./data/generated/embeddings/word_ent_embs/"
 ent_inlinks_path = "./data/entityid_dictid_inlinks_uniq.pkl"
-kg_weight_path = 'kg_weights.pt'
+kg_weight_path = 'kg_smallweights.pt'
 
 
 timestr = time.strftime("%Y%m%d-%H%M%S")
@@ -226,6 +226,7 @@ if __name__ == "__main__":
               'isDynamic' : args.isDynamic,
               'one_entity_once': args.one_entity_once,
               'args': args}
+    torch.save(args, 'args.pt')
     # pprint(config)
     ranker = EDRanker(config=config)
 
@@ -254,6 +255,7 @@ if __name__ == "__main__":
                 'kg_batch_size': args.kg_batch_size,
                 'isDynamic': args.isDynamic, 
                 'use_early_stop' : args.use_early_stop,
+                'output_file': F1_CSV_Path,
             }
         # pprint(config)
         benchmarks_scores = ranker.train(kg_dataset, conll.train, dev_datasets, config)

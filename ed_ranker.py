@@ -23,7 +23,7 @@ ModelClass = MulRelRanker
 wiki_prefix = 'en.wikipedia.org/wiki/'
 
 
-class EDRanker:
+class EDRanker():
     """
     ranking candidates
     """
@@ -54,12 +54,13 @@ class EDRanker:
             print('try loading model from', self.args.model_path)
             self.model = load_model(self.args.model_path, ModelClass)
         else:
+            from mulrel_ranker import MulRelRanker
             print('create new model')
 
             config['use_local'] = True
             config['use_local_only'] = self.args.use_local_only
             config['oracle'] = False
-            self.model = ModelClass(config)
+            self.model = MulRelRanker(config)
 
         self.load_ent_desc(500, 3)
 
@@ -291,10 +292,7 @@ class EDRanker:
         print('extracting training data')
         train_dataset = self.get_data_items(org_train_dataset, predict=False, isTrain=True)
         print('#train docs', len(train_dataset))
-        kg_dataloader = DataLoader(kg_dataset, 
-            batch_size=config['kg_batch_size'], 
-            num_workers=5, shuffle=True)
-        looper = utils.infiniteloop(kg_dataloader)
+
 
         self.init_lr = config['lr']
         dev_datasets = []
@@ -387,10 +385,8 @@ class EDRanker:
                 ment_ids = Variable(torch.LongTensor(ment_ids).cuda())
                 ment_mask = Variable(torch.FloatTensor(ment_mask).cuda())
 
-                kg_batch = next(looper)
                 if self.args.method == "SL":
                     optimizer.zero_grad()
-                    margin_loss = self.model.calculate_loss(kg_batch['kg_pos_triplets'], kg_batch['kg_neg_triplets'])
                     scores, _ = self.model.forward(token_ids, token_mask, entity_ids, entity_mask, p_e_m, mtype, etype,
                                                    ment_ids, ment_mask, desc_ids, desc_mask, gold=true_pos.view(-1, 1),
                                                    method=self.args.method,
@@ -423,7 +419,6 @@ class EDRanker:
                     # the actual episode number for one doc is determined by decision accuracy
                     for i_episode in count(1):
                         optimizer.zero_grad()
-                        margin_loss = self.model.calculate_loss(kg_batch['kg_pos_triplets'], kg_batch['kg_neg_triplets'])
 
                         # get the model output
                         scores, actions = self.model.forward(token_ids, token_mask, entity_ids, entity_mask, p_e_m,
@@ -482,7 +477,6 @@ class EDRanker:
 
                         if correct/total >= rl_acc_threshold or early_stop_count >= 3:
                             break
-                writer.add_scalar('margin', margin_loss, steps)
 
                 writer.add_scalar('loss', loss, steps)
                 steps += 1

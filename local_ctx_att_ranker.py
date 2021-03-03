@@ -13,7 +13,6 @@ class LocalCtxAttRanker(AbstractWordEntity):
 
     def __init__(self, config):
         print('--- create LocalCtxAttRanker model ---')
-
         config['word_embeddings_class'] = nn.Embedding
         config['entity_embeddings_class'] = nn.Embedding
         super(LocalCtxAttRanker, self).__init__(config)
@@ -22,15 +21,17 @@ class LocalCtxAttRanker(AbstractWordEntity):
         self.tok_top_n = config['tok_top_n']
         self.margin = config['margin']
 
-        self.att_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims * 2)))
-        self.tok_score_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims * 2)))
+        self.att_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims + 64)))
+        self.tok_score_mat_diag = nn.Parameter(torch.ones(self.emb_dims))
         self.local_ctx_dr = nn.Dropout(p=0)
 
-        self.ment_att_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims * 2)) )
-        self.ment_score_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims * 2)) )
+        self.ment_att_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims + 64)) )
+        self.ment_score_mat_diag = nn.Parameter(torch.ones(int(self.emb_dims + 64)) )
 
         self.ment_att_mat_diag.requires_grad = False
         self.ment_score_mat_diag.requires_grad = False
+        self.down_proj = nn.Linear(self.emb_dims + 64, self.emb_dims)
+        self.up_proj = nn.Linear(self.emb_dims, self.emb_dims + 64)
 
         self.param_copy_switch = True
 
@@ -62,10 +63,11 @@ class LocalCtxAttRanker(AbstractWordEntity):
         tok_vecs = self.word_embeddings(token_ids)
         entity_vecs = self.entity_embeddings(entity_ids)
         kg_entity_vecs = self.kg_ent_embeddings(entity_ids)
-        entity_vecs = torch.stack([ entity_vecs, kg_entity_vecs ], dim=-1)
+        entity_vecs = torch.cat([ entity_vecs, kg_entity_vecs ], dim=-1)
+        entity_vecs = self.down_proj(entity_vecs * self.att_mat_diag)
 
         # att
-        ent_tok_att_scores = torch.bmm(entity_vecs * self.att_mat_diag, tok_vecs.permute(0, 2, 1))
+        ent_tok_att_scores = torch.bmm(entity_vecs , tok_vecs.permute(0, 2, 1))
         ent_tok_att_scores = (ent_tok_att_scores * tok_mask).add_((tok_mask - 1).mul_(1e10))
         tok_att_scores, _ = torch.max(ent_tok_att_scores, dim=1)
         top_tok_att_scores, top_tok_att_ids = torch.topk(tok_att_scores, dim=1, k=min(self.tok_top_n, n_words))
@@ -74,6 +76,7 @@ class LocalCtxAttRanker(AbstractWordEntity):
 
         selected_tok_vecs = torch.gather(tok_vecs, dim=1,
                                          index=top_tok_att_ids.view(batchsize, -1, 1).repeat(1, 1, tok_vecs.size(2)))
+
         ctx_vecs = torch.sum((selected_tok_vecs * self.tok_score_mat_diag) * att_probs, dim=1, keepdim=True)
         ctx_vecs = self.local_ctx_dr(ctx_vecs)
         ent_ctx_scores = torch.bmm(entity_vecs, ctx_vecs.permute(0, 2, 1)).view(batchsize, n_entities)

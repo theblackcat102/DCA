@@ -54,9 +54,9 @@ class MulRelRanker(LocalCtxAttRanker):
     """
 
     def __init__(self, config):
-
-        print('--- create MulRelRanker model ---')
         super(MulRelRanker, self).__init__(config)
+        print('--- create MulRelRanker model ---')
+
         self.dr = config['dr']
         self.gamma = config['gamma']
         self.tok_top_n4ment = config['tok_top_n4ment']
@@ -75,11 +75,11 @@ class MulRelRanker(LocalCtxAttRanker):
         self.use_local_only = config.get('use_local_only', False)
         self.freeze_local = config.get('freeze_local', False)
 
-        self.entity2entity_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims))
-        self.entity2entity_score_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims))
+        self.entity2entity_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims + 64))
+        self.entity2entity_score_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims + 64))
 
-        self.knowledge2entity_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims))
-        self.knowledge2entity_score_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims))
+        self.knowledge2entity_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims + 64))
+        self.knowledge2entity_score_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims + 64))
 
         self.ment2ment_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims))
         self.ment2ment_score_mat_diag = torch.nn.Parameter(torch.ones(self.emb_dims))
@@ -104,9 +104,6 @@ class MulRelRanker(LocalCtxAttRanker):
 
         # Typing feature
         self.type_emb = torch.nn.Parameter(torch.randn([4, 5]))
-
-        # type of embedding
-        self.kg_ent_embeddings = nn.Embedding( config['rel_vocab_size'], self.emb_dims)
 
         self.criterion = MarginLoss()
         self.p_norm = 1
@@ -151,6 +148,9 @@ class MulRelRanker(LocalCtxAttRanker):
 
     def forward(self, token_ids, tok_mask, entity_ids, entity_mask, p_e_m, mtype, etype, ment_ids, ment_mask, desc_ids, desc_mask, gold=None,
                 method="SL", isTrain=True, isDynamic=0, isOrderLearning=False, isOrderFixed=False, isSort='topic', basemodel='deeped'):
+
+        torch.save( (token_ids, tok_mask, entity_ids, entity_mask, p_e_m, mtype, etype, ment_ids, ment_mask, desc_ids, desc_mask, gold),
+            'batch.pt')
 
         n_ments, n_cands = entity_ids.size()
 
@@ -584,12 +584,12 @@ class MulRelRanker(LocalCtxAttRanker):
 
         try:
             if isWord:
-                cumulative_entity_vecs = self.word_embeddings(cumulative_ids)
+                cumulative_entity_vecs = self.up_proj(self.word_embeddings(cumulative_ids))
             else:
                 cumulative_entity_vecs = self.entity_embeddings(cumulative_ids)
 
-            kg_entity_vecs = self.kg_ent_embeddings(cumulative_ids)
-            cumulative_entity_vecs = torch.stack([ cumulative_entity_vecs, kg_entity_vecs ], dim=-1)
+                kg_entity_vecs = self.kg_ent_embeddings(cumulative_ids)
+                cumulative_entity_vecs = torch.cat([ cumulative_entity_vecs, kg_entity_vecs ], dim=-1)
 
         except:
             print(cumulative_ids)
@@ -599,7 +599,7 @@ class MulRelRanker(LocalCtxAttRanker):
 
         entity_vecs = self.entity_embeddings(entity_ids)
         kg_entity_vecs = self.kg_ent_embeddings(entity_ids)
-        entity_vecs = torch.stack([ entity_vecs, kg_entity_vecs ], dim=-1)
+        entity_vecs = torch.cat([ entity_vecs, kg_entity_vecs ], dim=-1)
 
         # debug
         # print("Cumulative_entity_ids Size: ", cumulative_ids.size(), cumulative_ids.size(0))
